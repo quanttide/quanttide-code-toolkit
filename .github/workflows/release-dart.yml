@@ -1,0 +1,101 @@
+name: release-dart
+
+on:
+  push:
+    tags:
+      - 'dart/*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Dart release tag to process, for example dart/v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/dart
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: validate release metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          case "$RELEASE_TAG" in
+            dart/v*) ;;
+            *) echo "expected a dart/vX.Y.Z tag, got $RELEASE_TAG" >&2; exit 1 ;;
+          esac
+
+          VERSION="${RELEASE_TAG#dart/v}"
+          grep -Fq "version: $VERSION" pubspec.yaml
+          grep -Fq "## [v$VERSION]" CHANGELOG.md || grep -Fq "## [$VERSION]" CHANGELOG.md
+
+      - run: dart pub get
+      - run: dart analyze lib/ test/
+      - run: dart test
+
+      # 契约：五个语言包与 tests/contract/package.json 的领域名、版本必须一致
+      - name: contract（五语言一致）
+        run: sh ../../scripts/contract.sh dart
+
+      - run: dart pub publish --dry-run
+
+  publish:
+    needs: quality-gates
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/dart/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # 与 quanttide-data-toolkit / quanttide-execute-toolkit / quanttide-work-toolkit 用同一个发布 action：
+      # 凭证该落到哪儿（新版 pub 读 pub-tokens.json，不是那份 credentials.json）交给它，不要手写。
+      - uses: k-paxian/dart-package-publisher@master
+        with:
+          credentialJson: ${{ secrets.PUBDEV_CREDENTIAL_JSON }}
+          relativePath: packages/dart
+          force: true
+          flutter: false
+
+  # GitHub Release：注册表发布成功后，在仓库里补一条 Release（生成变更说明，预发布打标）。
+  # tag 是唯一事实源，Release 由 workflow 补上——无论 tag 怎么推上来，Releases 页都不缺版本。
+  github-release:
+    needs: publish
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/dart/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" --generate-notes
+
+      - name: mark prerelease when applicable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#dart/v}"
+          case "$VERSION" in
+            *-alpha.*|*-beta.*|*-rc.*)
+              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease
+              ;;
+          esac

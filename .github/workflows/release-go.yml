@@ -1,0 +1,110 @@
+name: release-go
+
+on:
+  push:
+    tags:
+      - 'go/*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Go release tag to process, for example go/v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/go
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/go/go.mod
+
+      - name: validate release metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          case "$RELEASE_TAG" in
+            go/v*) ;;
+            *) echo "expected a go/vX.Y.Z tag, got $RELEASE_TAG" >&2; exit 1 ;;
+          esac
+
+          VERSION="${RELEASE_TAG#go/}"
+          grep -Fq "## [v$VERSION]" CHANGELOG.md || grep -Fq "## [$VERSION]" CHANGELOG.md
+
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test ./... -count=1
+
+      # 契约：五个语言包与 tests/contract/package.json 的领域名、版本必须一致
+      - name: contract（五语言一致）
+        run: sh ../../scripts/contract.sh go
+
+  # Go 模块按目录取版本，标签包一层：go/vX.Y.Z 之外再打 packages/go/vX.Y.Z
+  create-module-alias:
+    needs: quality-gates
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/go/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: create Go module alias tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#go/}"
+          ALIAS_TAG="packages/go/$VERSION"
+          TARGET_SHA="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          EXISTING_SHA="$(git ls-remote --quiet --refs origin "refs/tags/$ALIAS_TAG" | awk '{print $1}')"
+
+          if [ -n "$EXISTING_SHA" ]; then
+            test "$EXISTING_SHA" = "$TARGET_SHA"
+            exit 0
+          fi
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag "$ALIAS_TAG" "$TARGET_SHA"
+          git push origin "refs/tags/$ALIAS_TAG"
+
+  # GitHub Release：模块别名标签打好后，在仓库里补一条 Release（生成变更说明，预发布打标）。
+  # tag 是唯一事实源，Release 由 workflow 补上——无论 tag 怎么推上来，Releases 页都不缺版本。
+  github-release:
+    needs: create-module-alias
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/go/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" --generate-notes
+
+      - name: mark prerelease when applicable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG#go/}"
+          case "$VERSION" in
+            *-alpha.*|*-beta.*|*-rc.*)
+              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease
+              ;;
+          esac
