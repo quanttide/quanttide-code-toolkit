@@ -1,0 +1,14 @@
+[package]
+name = "quanttide-code"
+version = "0.1.0"
+edition = "2024"
+description = "软件工程领域 Rust 语言工具包"
+license = "CC-BY-4.0"
+repository = "https://github.com/quanttide/quanttide-code-toolkit"
+readme = "README.md"
+keywords = ["quanttide", "software-engineering", "toolkit"]
+categories = ["development-tools"]
+
+[lib]
+name = "quanttide_code"
+path = "src/lib.rs"

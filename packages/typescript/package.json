@@ -1,0 +1,22 @@
+{
+  "name": "quanttide-code",
+  "version": "0.1.0",
+  "description": "软件工程工具箱 TypeScript 包：软件工程领域的共享能力",
+  "license": "CC-BY-4.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

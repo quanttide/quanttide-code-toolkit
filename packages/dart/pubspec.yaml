@@ -1,0 +1,11 @@
+name: quanttide_code
+description: 量潮软件工程（quanttide-code）工具箱 Dart 包：封装软件工程领域的共享能力与领域模型，供量潮各应用与工具复用。
+version: 0.1.0
+homepage: https://github.com/quanttide/quanttide-code-toolkit
+repository: https://github.com/quanttide/quanttide-code-toolkit
+
+environment:
+  sdk: ^3.11.5
+
+dev_dependencies:
+  test: ^1.25.0
