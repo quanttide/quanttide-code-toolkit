@@ -1,0 +1,6 @@
+{
+  "kind": "package",
+  "note": "包契约：五个语言包声明的领域名与版本必须与这份向量一致——清单各自是事实源，跨语言一致由此把住。",
+  "domain": "software-engineering",
+  "version": "0.1.0"
+}
