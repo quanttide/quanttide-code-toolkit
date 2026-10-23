@@ -1,6 +1,6 @@
 # quanttide-code-toolkit
 
-量潮软件工程工具箱 — 软件工程领域的共享库与工具集（独立仓库，挂载于 quanttide-code/packages）。
+量潮软件工程标准库 — 软件工程领域的共享库与标准库（独立仓库，挂载于 quanttide-code/packages）。
 
 ## 概述
 
